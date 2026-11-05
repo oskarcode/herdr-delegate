@@ -1,5 +1,5 @@
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Text } from "@earendil-works/pi-tui";
 
 const ELIGIBLE_STATES: ReadonlySet<string> = new Set(["idle", "done"]);
@@ -72,6 +72,13 @@ interface HerdrDelegationDetails {
   status: string;
 }
 
+interface TargetDiscovery {
+  workspaces: WorkspaceChoice[];
+  sourceAgent?: HerdrAgent;
+  sourceWorkspace?: HerdrWorkspace;
+  sourceTab?: HerdrTab;
+}
+
 function clean(value: unknown): string {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").replace(/\s+/gu, " ").trim();
 }
@@ -98,7 +105,7 @@ async function herdrJson<T>(pi: ExtensionAPI, args: string[], timeout = 15_000):
   return parseResult<T>(result.stdout, args.join(" "));
 }
 
-async function discoverTargets(pi: ExtensionAPI): Promise<WorkspaceChoice[]> {
+async function discoverTargets(pi: ExtensionAPI): Promise<TargetDiscovery> {
   const [workspaceData, agentData] = await Promise.all([
     herdrJson<HerdrWorkspaceList>(pi, ["workspace", "list"]),
     herdrJson<HerdrAgentList>(pi, ["agent", "list"]),
@@ -110,10 +117,13 @@ async function discoverTargets(pi: ExtensionAPI): Promise<WorkspaceChoice[]> {
     (agent.agent_status === "idle" || agent.agent_status === "done") &&
     ELIGIBLE_STATES.has(agent.agent_status),
   );
-  if (!agents.length) return [];
-
   const workspaceById = new Map((workspaceData.workspaces || []).map((workspace) => [workspace.workspace_id, workspace]));
-  const workspaceIds = [...new Set(agents.map((agent) => agent.workspace_id))];
+  const sourceWorkspaceId = process.env.HERDR_WORKSPACE_ID;
+  const sourceTabId = process.env.HERDR_TAB_ID;
+  const workspaceIds = [...new Set([
+    ...agents.map((agent) => agent.workspace_id),
+    ...(sourceWorkspaceId ? [sourceWorkspaceId] : []),
+  ])];
   const tabResults: Array<[string, HerdrTab[]]> = await Promise.all(workspaceIds.map(async (workspaceId): Promise<[string, HerdrTab[]]> => {
     try {
       const data = await herdrJson<HerdrTabList>(pi, ["tab", "list", "--workspace", workspaceId]);
@@ -124,7 +134,7 @@ async function discoverTargets(pi: ExtensionAPI): Promise<WorkspaceChoice[]> {
   }));
   const tabsByWorkspace = new Map<string, HerdrTab[]>(tabResults);
 
-  return workspaceIds.map((workspaceId) => {
+  const workspaces = workspaceIds.map((workspaceId) => {
     const workspace = workspaceById.get(workspaceId);
     const workspaceAgents = agents.filter((agent) => agent.workspace_id === workspaceId);
     const tabById = new Map((tabsByWorkspace.get(workspaceId) || []).map((tab) => [tab.tab_id, tab]));
@@ -142,6 +152,35 @@ async function discoverTargets(pi: ExtensionAPI): Promise<WorkspaceChoice[]> {
       }),
     };
   }).filter((workspace) => workspace.tabs.some((tab) => tab.agents.length));
+  return {
+    workspaces,
+    sourceAgent: agentData.agents?.find((agent) => agent.pane_id === currentPaneId),
+    sourceWorkspace: sourceWorkspaceId ? workspaceById.get(sourceWorkspaceId) : undefined,
+    sourceTab: sourceWorkspaceId && sourceTabId
+      ? tabsByWorkspace.get(sourceWorkspaceId)?.find((tab) => tab.tab_id === sourceTabId)
+      : undefined,
+  };
+}
+
+function describeSource(ctx: ExtensionCommandContext, source: TargetDiscovery): string {
+  const paneId = process.env.HERDR_PANE_ID;
+  const workspaceId = process.env.HERDR_WORKSPACE_ID;
+  const tabId = process.env.HERDR_TAB_ID;
+  const sessionId = ctx.sessionManager.getSessionId();
+  const sessionFile = ctx.sessionManager.getSessionFile();
+  const agentName = clean(source.sourceAgent?.name) || clean(source.sourceAgent?.agent) || "Pi agent";
+  const lines = [
+    "This task was delegated from another Herdr-managed Pi session. Your own transcript is a different conversation.",
+    `- Source agent: ${agentName}${paneId ? ` (pane ${paneId})` : ""}`,
+    `- Source workspace: ${clean(source.sourceWorkspace?.label) || workspaceId || "unknown"}${workspaceId ? ` (${workspaceId})` : ""}`,
+    `- Source tab: ${clean(source.sourceTab?.label) || tabId || "unknown"}${tabId ? ` (${tabId})` : ""}`,
+    `- Source working directory: ${ctx.cwd}`,
+    ...(sessionId ? [`- Source Pi session ID: ${sessionId}`] : []),
+    ...(sessionFile ? [`- Exact source Pi transcript file (JSONL): ${sessionFile}`] : []),
+    ...(paneId ? [`- Read recent source conversation: \`herdr agent read ${paneId} --source recent-unwrapped --lines 160\``] : []),
+    "Before acting, inspect the source pane's recent output for the context relevant to this task. If that does not contain enough history, consult the exact source session transcript above. Treat both as read-only context; do not assume your own session contains it.",
+  ];
+  return lines.join("\n");
 }
 
 function optionLabel(label: string, id: string, current: boolean): string {
@@ -187,7 +226,8 @@ export default function (pi: ExtensionAPI): void {
       }
 
       try {
-        const workspaces = await discoverTargets(pi);
+        const discovery = await discoverTargets(pi);
+        const workspaces = discovery.workspaces;
         if (!workspaces.length) {
           ctx.ui.notify("No other idle or done Herdr agents are available to receive a task.", "warning");
           return;
@@ -229,15 +269,11 @@ export default function (pi: ExtensionAPI): void {
         if (!task) return;
 
         const agentName = clean(agent.name) || `${clean(agent.agent) || "agent"} (${agent.pane_id})`;
-        const preview = task.length > 500 ? `${task.slice(0, 497)}…` : task;
-        const accepted = await ctx.ui.confirm(
-          `Delegate to ${workspace.label} / ${tab.label} / ${agentName}?`,
-          `${preview}\n\nThis sends a prompt to that agent's existing conversation.`,
-        );
-        if (!accepted) return;
-
         const prompt = [
-          "Continue your existing conversation and complete the following delegated task:",
+          "## Delegation source and context",
+          describeSource(ctx, discovery),
+          "",
+          "## Task",
           task,
           "",
           "When finished, provide the user-facing deliverable and end your final response with these exact marker lines, with the complete deliverable between them:",
@@ -246,6 +282,12 @@ export default function (pi: ExtensionAPI): void {
           RESULT_END,
           "Do not put analysis or internal reasoning inside the marked result block.",
         ].join("\n");
+        const preview = prompt.length > 700 ? `${prompt.slice(0, 697)}…` : prompt;
+        const accepted = await ctx.ui.confirm(
+          `Delegate to ${workspace.label} / ${tab.label} / ${agentName}?`,
+          `${preview}\n\nThis sends a prompt to that agent's existing conversation.`,
+        );
+        if (!accepted) return;
 
         ctx.ui.setWorkingMessage(`Delegating to ${agentName} in ${workspace.label} / ${tab.label}…`);
         try {

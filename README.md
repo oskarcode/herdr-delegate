@@ -32,13 +32,13 @@ Or include the task directly:
 /herdr-delegate Review the API changes in the current branch and report actionable findings.
 ```
 
-The extension lets you choose a workspace, tab, and agent, then shows a confirmation before sending the task. It targets existing agents in `idle` or `done` states; it excludes the current pane and does not offer `working`, `blocked`, or `unknown` agents. It does not create or move workspaces, tabs, or panes.
+The extension lets you choose a workspace, tab, and agent, then shows a confirmation before sending the task. The generated prompt identifies the source agent, Herdr workspace/tab IDs and labels, working directory, Pi session ID, and exact session transcript path. It also tells the target how to inspect the source pane's recent output with `herdr agent read`. The extension targets existing agents in `idle` or `done` states; it excludes the current pane and does not offer `working`, `blocked`, or `unknown` agents. It does not create or move workspaces, tabs, or panes.
 
 The extension waits up to ten minutes for the task to settle. When the target agent ends its response with the requested markers, the result is added to the current Pi conversation as a rendered message. Results are limited to 40,000 characters. If the task times out or the marked answer cannot be read, the extension reports that and does not automatically resend the prompt.
 
 ## Permissions and behavior
 
-Pi extensions execute with the same operating-system permissions as Pi. Review the source before installing. This extension invokes the Herdr CLI to list workspaces, agents, and tabs, and—only after your confirmation—to prompt and read the selected agent. It stores no credentials and does not access other agents' transcripts during target discovery.
+Pi extensions execute with the same operating-system permissions as Pi. Review the source before installing. This extension invokes the Herdr CLI to list workspaces, agents, and tabs, and—only after your confirmation—to prompt and read the selected agent. The source transcript path is provided to the target as a reference; the extension does not read or attach the source transcript itself. It stores no credentials.
 
 Delegation uses the selected agent's existing conversation. The delegated agent may make changes or run commands according to the task and its own permissions; review its response and work as appropriate.
 
