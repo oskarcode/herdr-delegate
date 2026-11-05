@@ -1,0 +1,15 @@
+{
+  "name": "herdr-delegate",
+  "version": "1.0.0",
+  "description": "Choose a ready Herdr agent and delegate a task from Pi.",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "herdr", "agent-delegation"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions/herdr-delegate.ts"]
+  }
+}
