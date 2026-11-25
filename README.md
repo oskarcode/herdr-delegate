@@ -4,13 +4,19 @@ A Pi extension for delegating work to another ready agent in a Herdr workspace. 
 
 ## Requirements
 
-- [Pi](https://github.com/earendil-works/pi) with TypeScript extension support.
+- [Pi](https://pi.dev/) with TypeScript extension support.
 - [Herdr](https://herdr.dev/) installed and running.
 - Pi running in a Herdr-managed interactive terminal. The extension checks `HERDR_ENV=1` and requires Pi's TUI.
 
 ## Install
 
-From a Pi session, install this package:
+Install from npm:
+
+```text
+pi install npm:herdr-delegate
+```
+
+Or install directly from GitHub:
 
 ```text
 pi install git:github.com/oskarcode/herdr-delegate
@@ -41,6 +47,10 @@ The extension waits up to ten minutes for the task to settle. When the target ag
 Pi extensions execute with the same operating-system permissions as Pi. Review the source before installing. This extension invokes the Herdr CLI to list workspaces, agents, and tabs, and—only after your confirmation—to prompt and read the selected agent. The source transcript path is provided to the target as a reference; the extension does not read or attach the source transcript itself. It stores no credentials.
 
 Delegation uses the selected agent's existing conversation. The delegated agent may make changes or run commands according to the task and its own permissions; review its response and work as appropriate.
+
+## Package discovery
+
+This package includes the `pi-package` keyword and a `pi.extensions` manifest, so after publishing to npm it is eligible for the Pi package gallery at <https://pi.dev/packages>.
 
 ## License
 

@@ -1,15 +1,39 @@
 {
   "name": "herdr-delegate",
   "version": "1.0.0",
-  "description": "Choose a ready Herdr agent and delegate a task from Pi.",
+  "description": "Delegate tasks from Pi to ready agents in Herdr workspaces.",
   "type": "module",
-  "keywords": ["pi-package", "pi-extension", "herdr", "agent-delegation"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "herdr",
+    "agent-delegation",
+    "coding-agents",
+    "multi-agent"
+  ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oskarcode/herdr-delegate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oskarcode/herdr-delegate/issues"
+  },
+  "homepage": "https://github.com/oskarcode/herdr-delegate#readme",
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
   },
   "pi": {
-    "extensions": ["./extensions/herdr-delegate.ts"]
+    "extensions": [
+      "./extensions/herdr-delegate.ts"
+    ]
   }
 }
